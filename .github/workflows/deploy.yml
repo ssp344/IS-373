@@ -38,7 +38,7 @@ jobs:
         run: |
           IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
 
-          if [ "${GITHUB_REF_NAME}" = "qa" ]; then
+          if [ "$GITHUB_REF_NAME" = "qa" ]; then
             TAG=qa
           else
             TAG=production
@@ -51,18 +51,27 @@ jobs:
           docker push "$IMAGE:$TAG"
 
       - name: Deploy to DigitalOcean
-        if: github.ref == 'refs/heads/main'
         env:
           SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
           DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
           DROPLET_USER: ${{ secrets.DROPLET_USER }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+
+          printf '%s' "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+
           chmod 600 ~/.ssh/deploy_key
+
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
 
           ssh-keyscan -H "$DROPLET_HOST" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/deploy_key \
+          if [ "$GITHUB_REF_NAME" = "qa" ]; then
+            SERVICE=qa
+          else
+            SERVICE=production
+          fi
+
+          ssh -o BatchMode=yes -i ~/.ssh/deploy_key \
             "$DROPLET_USER@$DROPLET_HOST" \
-            "sudo docker compose -f /opt/is373/compose.yaml pull production && sudo docker compose -f /opt/is373/compose.yaml up -d --no-deps production"
+            "sudo docker compose -f /opt/is373/compose.yaml pull $SERVICE && sudo docker compose -f /opt/is373/compose.yaml up -d --no-deps $SERVICE"
