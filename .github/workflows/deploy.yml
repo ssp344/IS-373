@@ -13,26 +13,32 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Validate website
-        run: |
-          test -s index.html
-          test -s Dockerfile
-
-      - name: Build Docker image
-        run: docker build -t is373-website .
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push Docker image
+      - name: Publish environment image
         run: |
           IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}
-          docker tag is373-website "$IMAGE:${GITHUB_SHA}"
-          docker push "$IMAGE:${GITHUB_SHA}"
+          if [ "$GITHUB_REF_NAME" = "qa" ]; then
+            TAG=qa
+          else
+            TAG=production
+          fi
+          docker tag "$IMAGE:${GITHUB_SHA}" "$IMAGE:$TAG"
+          docker push "$IMAGE:$TAG"
+
+      - name: Deploy to DigitalOcean
+        env:
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DROPLET_HOST" >> ~/.ssh/known_hosts
+          if [ "$GITHUB_REF_NAME" = "qa" ]; then
+            SERVICE=qa
+          else
+            SERVICE=production
+          fi
+          ssh -i ~/.ssh/deploy_key \
+            "$DROPLET_USER@$DROPLET_HOST" \
+            "sudo docker compose -f /opt/is373/compose.yaml pull $SERVICE && sudo docker compose -f /opt/is373/compose.yaml up -d --no-deps $SERVICE"
