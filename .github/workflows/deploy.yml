@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,33 +29,40 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${"{{ github.actor }}"}
-          password: ${"{{ secrets.GITHUB_TOKEN }}"}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish environment image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
         run: |
-          IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}
-          if [ "$GITHUB_REF_NAME" = "qa" ]; then
+          IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+
+          if [ "${GITHUB_REF_NAME}" = "qa" ]; then
             TAG=qa
           else
             TAG=production
           fi
+
           docker tag is373-website "$IMAGE:${GITHUB_SHA}"
           docker push "$IMAGE:${GITHUB_SHA}"
+
           docker tag is373-website "$IMAGE:$TAG"
           docker push "$IMAGE:$TAG"
 
       - name: Deploy to DigitalOcean
         if: github.ref == 'refs/heads/main'
         env:
-          SSH_KEY: ${"{{ secrets.DROPLET_SSH_KEY }}"}
-          DROPLET_HOST: ${"{{ secrets.DROPLET_HOST }}"}
-          DROPLET_USER: ${"{{ secrets.DROPLET_USER }}"}
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+
           ssh-keyscan -H "$DROPLET_HOST" >> ~/.ssh/known_hosts
+
           ssh -i ~/.ssh/deploy_key \
             "$DROPLET_USER@$DROPLET_HOST" \
             "sudo docker compose -f /opt/is373/compose.yaml pull production && sudo docker compose -f /opt/is373/compose.yaml up -d --no-deps production"
