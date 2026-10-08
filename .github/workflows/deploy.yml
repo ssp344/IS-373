@@ -1,0 +1,38 @@
+name: Build and Test Website
+
+on:
+  push:
+    branches: [main, qa]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate website
+        run: |
+          test -s index.html
+          test -s Dockerfile
+
+      - name: Build Docker image
+        run: docker build -t is373-website .
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image
+        run: |
+          IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}
+          docker tag is373-website "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:${GITHUB_SHA}"
